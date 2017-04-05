@@ -1,11 +1,13 @@
 package lime.graphics.opengl;
 
 
+import cpp.NativeArray;
 import lime.utils.ArrayBuffer;
 import lime.utils.ArrayBufferView;
 import lime.utils.Float32Array;
 import lime.utils.Int32Array;
 import lime.system.System;
+import lime.utils.UInt32Array;
 
 #if (js && html5)
 import js.html.webgl.RenderingContext;
@@ -33,8 +35,14 @@ typedef Float32 = Float;
 
 
 class GL {
+	//public inline static var RGBA32F = 0x8814;
+	//public inline static var RGBA16F = 0x881A;
 	
-	
+	public inline static var RGBA8 = 0x8058;
+	public inline static var TEXTURE_COMPARE_MODE                                         = 0x884C;
+    public     inline static var TEXTURE_COMPARE_FUNC                                         = 0x884D;
+    public    inline static var COMPARE_R_TO_TEXTURE                                         = 0x884E;
+		
 	public static inline var DEPTH_BUFFER_BIT = 0x00000100;
 	public static inline var STENCIL_BUFFER_BIT = 0x00000400;
 	public static inline var COLOR_BUFFER_BIT = 0x00004000;
@@ -359,7 +367,13 @@ class GL {
 	public static inline var FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL = 0x8CD2;
 	public static inline var FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE = 0x8CD3;
 	
-	public static inline var COLOR_ATTACHMENT0 = 0x8CE0;
+      public   inline static var COLOR_ATTACHMENT0                                            = 0x8CE0;
+     public    inline static var COLOR_ATTACHMENT1                                            = 0x8CE1;
+    public     inline static var COLOR_ATTACHMENT2                                            = 0x8CE2;
+    public     inline static var COLOR_ATTACHMENT3                                            = 0x8CE3;
+     public    inline static var COLOR_ATTACHMENT4                                            = 0x8CE4;
+     public    inline static var COLOR_ATTACHMENT5                                            = 0x8CE5;
+
 	public static inline var DEPTH_ATTACHMENT = 0x8D00;
 	public static inline var STENCIL_ATTACHMENT = 0x8D20;
 	public static inline var DEPTH_STENCIL_ATTACHMENT = 0x821A;
@@ -386,13 +400,95 @@ class GL {
 	
 	public static var version (get, null):Int;
 	
+	
+	public static var state:GLState = new GLState();
+	public static var useState:Bool = true;
+	public static var currentFrame:GLFramebuffer = null;
+	public static var backbufferFrame:GLFramebuffer = null;
+	public static var blockBackbufferColorClear:Bool = false;
+	public static var blockBackbufferViewport:Bool = false;	
+	
 	#if (js && html5)
 	private static var context:RenderingContext;
 	#end
-	
-	
-	public static inline function activeTexture (texture:Int):Void {
+	public static var GL_TEXTURES:Array<Int> = [GL.TEXTURE0, GL.TEXTURE1, GL.TEXTURE2,
+		GL.TEXTURE3, GL.TEXTURE4, GL.TEXTURE5, GL.TEXTURE6, GL.TEXTURE7, GL.TEXTURE8];		
+	public static function applyState(st:GLState):Void{
+		setFlag(st.depth, DEPTH_TEST);
+		setFlag(st.stencil, STENCIL_TEST);
+		setFlag(st.blend, BLEND);
 		
+		//textures
+		if (st.uniformTextures.length != 0 && st.glTextures.length != 0){
+			var min:Int = st.uniformTextures.length;
+			if (min > st.glTextures.length) min = st.glTextures.length;
+			for (i in 0...min){
+				var t = st.glTextures[i];
+				var u = st.uniformTextures[i];
+				if (t != null && u != null){
+					activeTexture(GL_TEXTURES[i]);
+					//to do support all types of tex
+					bindTexture(TEXTURE_2D, t);
+					uniform1i(u, i);
+				}				
+			}
+		}
+		//blend
+		if (st.blend == true){
+			blendEquation(st.blendEquationMode);
+			blendFunc(st.blendSFactor, st.blendDFactor);
+		}
+		//vertex attrib
+		for (i in 0...st.vertexAttribArrays.length){
+			var b = st.vertexAttribArrays[i];
+			if (b != null){
+				(b==true)?enableVertexAttribArray(i):disableVertexAttribArray(i);
+			}
+		}
+		state = st;
+	}
+	private static function setFlag(st:Null<Bool>,cap:Int):Void{
+		if (st != null){
+			if (st == true){
+				enable(cap);
+			}else{
+				disable(cap);
+			}
+		}
+	}	
+	/*public static inline function drawBuffers(n:Int, buffs:ArrayBufferView):Void{
+		#if (js && html5 && !display)
+		
+		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
+		lime_gl_draw_buffers(n, buffs.buffer);
+		#elseif java
+		
+		#end
+		
+	}
+	public static inline function bindFragDataLocation(program:GLProgram, colorNum:Int, name:String):Void{
+		#if (js && html5 && !display)
+		
+		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
+		lime_gl_bind_frag_data_location(program,colorNum,name)
+		#elseif java
+		
+		#end
+		
+	}	
+	
+	public static inline function getFragDataLocation(program:GLProgram, name:String):Int{
+		#if (js && html5 && !display)
+		return 0;
+		
+		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
+		return lime_gl_get_frag_data_location(program,name);
+		#elseif java
+		return 0;
+		#end
+	}*/
+	public static inline function activeTexture (texture:Int):Void {
+		if (useState) state.activeTexture(texture);
 		#if (js && html5 && !display)
 		context.activeTexture (texture);
 		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
@@ -433,7 +529,7 @@ class GL {
 	
 	
 	public static inline function bindBuffer (target:Int, buffer:GLBuffer):Void {
-		
+		if (useState) state.bindBuffer(target, buffer);
 		#if (js && html5 && !display)
 		context.bindBuffer (target, buffer);
 		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
@@ -446,7 +542,7 @@ class GL {
 	
 	
 	public static inline function bindFramebuffer (target:Int, framebuffer:GLFramebuffer):Void {
-		
+		currentFrame = framebuffer;
 		#if (js && html5 && !display)
 		context.bindFramebuffer (target, framebuffer);
 		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
@@ -472,7 +568,7 @@ class GL {
 	
 	
 	public static inline function bindTexture (target:Int, texture:GLTexture):Void {
-		
+		if (useState) state.bindTexture(target, texture);
 		#if (js && html5 && !display)
 		context.bindTexture (target, texture);
 		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
@@ -498,7 +594,7 @@ class GL {
 	
 	
 	public static inline function blendEquation (mode:Int):Void {
-		
+		if (useState) state.blendEquation(mode);
 		#if (js && html5 && !display)
 		context.blendEquation (mode);
 		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
@@ -524,7 +620,7 @@ class GL {
 	
 	
 	public static inline function blendFunc (sfactor:Int, dfactor:Int):Void {
-		
+		if (useState) state.blendFunc(sfactor, dfactor);
 		#if (js && html5 && !display)
 		context.blendFunc (sfactor, dfactor);
 		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
@@ -595,27 +691,33 @@ class GL {
 	
 	
 	public static inline function clear (mask:Int):Void {
-		
-		#if (js && html5 && !display)
-		context.clear (mask);
-		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
-		lime_gl_clear (mask);
-		#elseif java
-		GL11.glClear (mask);
-		#end
+		if (!blockBackbufferColorClear || currentFrame != backbufferFrame){
+			if (mask != COLOR_BUFFER_BIT){
+				mask &= (DEPTH_BUFFER_BIT | STENCIL_BUFFER_BIT);
+				#if (js && html5 && !display)
+				context.clear (mask);
+				#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
+				lime_gl_clear (mask);
+				#elseif java
+				GL11.glClear (mask);
+				#end				
+			}
+			
+		}		
 		
 	}
 	
 	
 	public static inline function clearColor (red:Float, green:Float, blue:Float, alpha:Float):Void {
-		
-		#if (js && html5 && !display)
-		context.clearColor (red, green, blue, alpha);
-		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
-		lime_gl_clear_color (red, green, blue, alpha);
-		#elseif java
-		GL11.glClearColor (red, green, blue, alpha);
-		#end
+		if (!blockBackbufferColorClear || currentFrame != backbufferFrame){
+			#if (js && html5 && !display)
+			context.clearColor (red, green, blue, alpha);
+			#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
+			lime_gl_clear_color (red, green, blue, alpha);
+			#elseif java
+			GL11.glClearColor (red, green, blue, alpha);
+			#end
+		}
 		
 	}
 	
@@ -980,7 +1082,7 @@ class GL {
 	
 	
 	public static inline function disable (cap:Int):Void {
-		
+		if (useState) state.disable(cap);
 		#if (js && html5 && !display)
 		context.disable (cap);
 		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
@@ -993,7 +1095,7 @@ class GL {
 	
 	
 	public static inline function disableVertexAttribArray (index:Int):Void {
-		
+		if(useState) state.disableVertexAttribArray(index);
 		#if (js && html5 && !display)
 		context.disableVertexAttribArray (index);
 		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
@@ -1032,7 +1134,7 @@ class GL {
 	
 	
 	public static inline function enable (cap:Int):Void {
-		
+		if(useState) state.enable(cap);
 		#if (js && html5 && !display)
 		context.enable (cap);
 		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
@@ -1045,7 +1147,7 @@ class GL {
 	
 	
 	public static inline function enableVertexAttribArray (index:Int):Void {
-		
+		if (useState) state.enableVertexAttribArray(index);
 		#if (js && html5 && !display)
 		context.enableVertexAttribArray (index);
 		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
@@ -1856,7 +1958,7 @@ class GL {
 	
 	
 	public static inline function uniform1i (location:GLUniformLocation, x:Int):Void {
-		
+		if (useState) state.uniform1i(location, x);
 		#if (js && html5 && !display)
 		context.uniform1i (location, x);
 		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
@@ -2070,7 +2172,7 @@ class GL {
 	
 	
 	public static inline function useProgram (program:GLProgram):Void {
-		
+		if (useState) state.useProgram(program);
 		#if (js && html5 && !display)
 		context.useProgram (program);
 		#elseif ((cpp || neko || nodejs) && lime_opengl && !macro)
@@ -2213,6 +2315,11 @@ class GL {
 	
 	
 	#if ((cpp || neko || nodejs) && lime_opengl && !macro)
+	
+	//@:cffi private static function lime_gl_get_frag_data_location(program:Int, name:String):Int;
+	//@:cffi private static function lime_gl_bind_frag_data_location (program:Int, colorNumber:Int, name:String):Void;
+	//@:cffi private static function lime_gl_draw_buffers(n:Int, data:Dynamic):Void;
+	
 	@:cffi private static function lime_gl_active_texture (texture:Int):Void;
 	@:cffi private static function lime_gl_attach_shader (program:Int, shader:Int):Void;
 	@:cffi private static function lime_gl_bind_attrib_location (program:Int, index:Int, name:String):Void;
